@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pin Drop with Remarks</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 350px;
+            background-color: #f5f5f5;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #sidebar-header {
+            padding-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+        }
+
+        #sidebar h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        #sidebar p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .pin-item {
+            background: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pin-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .pin-item h3 {
+            font-size: 16px;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+
+        .pin-item p {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-bottom: 0;
+        }
+
+        .pin-item .coordinates {
+            font-size: 12px;
+            color: #bdc3c7;
+            margin-top: 5px;
+        }
+
+        #map-container {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        #no-pins {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .leaflet-popup-content {
+            margin: 10px;
+        }
+
+        .pin-form input,
+        .pin-form textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .pin-form button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .pin-form button:hover {
+            background-color: #2980b9;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column-reverse;
+            }
+
+            #sidebar {
+                width: 100%;
+                height: 250px;
+            }
+
+            #map-container {
+                height: calc(100vh - 250px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <h2>Saved Pins</h2>
+            <p>Click on any pin to view its location on the map</p>
+        </div>
+        <div id="pins-list">
+            <div id="no-pins">No pins have been added yet</div>
+        </div>
+    </div>
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize the map with a default view
+            const map = L.map('map').setView([20.5937, 78.9629], 5); // Default to India
+            
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // Array to store pin data
+            let pins = JSON.parse(localStorage.getItem('pins')) || [];
+            let activePin = null;
+            const pinsListElement = document.getElementById('pins-list');
+            
+            // Load saved pins on startup
+            updatePinsList();
+
+            // Function to update the pins list in the sidebar
+            function updatePinsList() {
+                pinsListElement.innerHTML = '';
+                
+                if (pins.length === 0) {
+                    pinsListElement.innerHTML = '<div id="no-pins">No pins have been added yet</div>';
+                    return;
+                }
+                
+                pins.forEach((pin, index) => {
+                    const pinElement = document.createElement('div');
+                    pinElement.className = 'pin-item';
+                    pinElement.innerHTML = `
+                        <h3>${pin.remark || 'No remarks'}</h3>
+                        <p>${pin.address || 'Address not available'}</p>
+                        <p class="coordinates">Lat: ${pin.lat.toFixed(4)}, Lng: ${pin.lng.toFixed(4)}</p>
+                    `;
+                    
+                    pinElement.addEventListener('click', function() {
+                        map.setView([pin.lat, pin.lng], 15);
+                        if (activePin) {
+                            map.removeLayer(activePin);
+                        }
+                        activePin = L.marker([pin.lat, pin.lng]).addTo(map)
+                            .bindPopup(`<b>Remarks:</b> ${pin.remark || 'None'}<br><b>Address:</b> ${pin.address || 'Not available'}`);
+                        activePin.openPopup();
+                    });
+                    
+                    pinsListElement.appendChild(pinElement);
+                });
+            }
+
+            // Function to fetch address from coordinates
+            async function fetchAddress(lat, lng) {
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                    const data = await response.json();
+                    return data.display_name || 'Address not available';
+                } catch (error) {
+                    console.error('Error fetching address:', error);
+                    return 'Address not available';
+                }
+            }
+
+            // Handle map click to add new pin
+            map.on('click', async function(e) {
+                const { lat, lng } = e.latlng;
+                
+                // Create a popup form for remarks
+                const popup = L.popup()
+                    .setLatLng(e.latlng)
+                    .setContent(`
+                        <div class="pin-form">
+                            <h3>Add Pin</h3>
+                            <textarea placeholder="Enter remarks (optional)" id="pin-remarks" rows="3"></textarea>
+                            <button id="save-pin">Save Pin</button>
+                        </div>
+                    `)
+                    .openOn(map);
+                
+                // Wait for the popup to be added to DOM
+                setTimeout(async () => {
+                    const saveButton = document.getElementById('save-pin');
+                    
+                    saveButton.addEventListener('click', async function() {
+                        const remarks = document.getElementById('pin-remarks').value;
+                        const address = await fetchAddress(lat, lng);
+                        
+                        // Save the pin
+                        pins.push({
+                            lat,
+                            lng,
+                            remark: remarks,
+                            address
+                        });
+                        
+                        // Update local storage
+                        localStorage.setItem('pins', JSON.stringify(pins));
+                        
+                        // Close the popup and update the pins list
+                        map.closePopup();
+                        updatePinsList();
+                        
+                        // Show the newly added pin
+                        const newPin = pins[pins.length - 1];
+                        map.setView([newPin.lat, newPin.lng], 15);
+                        if (activePin) {
+                            map.removeLayer(activePin);
+                        }
+                        activePin = L.marker([newPin.lat, newPin.lng]).addTo(map)
+                            .bindPopup(`<b>Remarks:</b> ${newPin.remark || 'None'}<br><b>Address:</b> ${newPin.address || 'Not available'}`);
+                        activePin.openPopup();
+                    });
+                }, 100);
+            });
+        });
+    </script>
+</body>
+</html>
